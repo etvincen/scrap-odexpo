@@ -12,6 +12,8 @@ import json
 import re
 from typing import Dict, List, Optional, Set
 import config
+import urllib.parse
+import time
 
 def is_allowed_domain(url: str) -> bool:
     """Check if URL belongs to allowed domain"""
@@ -39,182 +41,170 @@ def sanitize_filename(filename: str) -> str:
     return filename[:255]  # Limit length
 
 def clean_description_for_folder(description: str) -> str:
-    """
-    Clean description text to create a suitable folder name
-    Removes tabs, newlines, extra spaces and extracts the main category
-    """
+    """Clean description text to create a valid folder name"""
     if not description:
         return "miscellaneous"
     
-    # Remove tabs, newlines, and extra whitespace
-    cleaned = re.sub(r'[\t\n\r]+', ' ', description)
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    # Remove HTML tags if any
+    import re
+    cleaned = re.sub(r'<[^>]+>', '', description)
     
-    # Split by common separators and look for category names
-    lines = cleaned.split('\n')
-    candidates = []
+    # Remove extra whitespace, tabs, newlines
+    cleaned = re.sub(r'\s+', ' ', cleaned.strip())
     
-    for line in lines:
-        line = line.strip()
-        
-        # Skip empty lines or very long lines (likely descriptions)
-        if not line or len(line) > 100:
-            continue
-            
-        # Look for short, meaningful category names
-        # Common patterns in French gallery names
-        if len(line) < 50 and (
-            line.isupper() or  # All caps like "FAUVES", "ANIMAUX"
-            any(word in line.upper() for word in [
-                'ANIMAUX', 'PORTRAITS', 'FAUVES', 'PASTEL', 'ACRYLIQUE', 
-                'ORIENT', 'AFRIQUE', 'ASIE', 'ABSTRAITS', 'NATURE', 
-                'OISEAUX', 'ENFANCE', 'DIVERS', 'COMMANDES', 'RIZIERES'
-            ])
-        ):
-            candidates.append(line.strip())
+    # SIMPLIFIED: Just take the first meaningful word/phrase
+    # Split by common separators and take first part
+    parts = re.split(r'[,\n\r\t]+', cleaned)
+    if parts:
+        first_part = parts[0].strip()
+        if first_part:
+            cleaned = first_part
     
-    # Take the first candidate or extract from the beginning
-    if candidates:
-        category_name = candidates[0]
-    else:
-        # Fallback: take first few meaningful words
-        words = [word for word in cleaned.split()[:5] if len(word) > 2]
-        category_name = ' '.join(words[:3]) if words else cleaned[:50]
+    # Replace problematic characters for folder names
+    cleaned = re.sub(r'[<>:"/\\|?*]', '_', cleaned)
+    cleaned = re.sub(r'[àáâãäå]', 'a', cleaned)
+    cleaned = re.sub(r'[èéêë]', 'e', cleaned)
+    cleaned = re.sub(r'[ìíîï]', 'i', cleaned)
+    cleaned = re.sub(r'[òóôõö]', 'o', cleaned)
+    cleaned = re.sub(r'[ùúûü]', 'u', cleaned)
+    cleaned = re.sub(r'[ç]', 'c', cleaned)
     
-    # Clean for folder name - preserve French characters
-    # Allow letters, numbers, spaces, hyphens, apostrophes
-    folder_name = re.sub(r'[^\w\s\'-àâäéèêëïîôöùûüÿñç]', '', category_name, flags=re.IGNORECASE)
+    # Convert to lowercase and replace spaces with underscores
+    cleaned = cleaned.lower().replace(' ', '_')
     
-    # Replace spaces with underscores and clean up
-    folder_name = re.sub(r'\s+', '_', folder_name)
-    folder_name = folder_name.lower().strip('_')
+    # Remove multiple underscores
+    cleaned = re.sub(r'_+', '_', cleaned)
     
-    # Handle special cases and clean up common issues
-    folder_name = folder_name.replace("'", "")  # Remove apostrophes
-    folder_name = re.sub(r'_+', '_', folder_name)  # Multiple underscores to single
+    # Remove leading/trailing underscores
+    cleaned = cleaned.strip('_')
     
-    # Ensure we have something meaningful
-    if len(folder_name) < 2:
+    # Ensure it's not empty and not too long
+    if not cleaned or len(cleaned) < 2:
         return "miscellaneous"
     
-    # Limit length for filesystem compatibility
-    return folder_name[:50]
+    return cleaned[:50]  # Limit length
 
 def create_directory_structure(image_url: str, description: str = "") -> str:
     """Create directory structure based on description content"""
-    try:
-        # Use description to create category-based subfolder
-        category_folder = clean_description_for_folder(description)
-        
-        # Create the directory path
-        subdir = os.path.join(config.IMAGES_DIR, category_folder)
-        Path(subdir).mkdir(parents=True, exist_ok=True)
-        
-        return subdir
-    except Exception:
-        # Fallback to main images directory
-        Path(config.IMAGES_DIR).mkdir(parents=True, exist_ok=True)
-        return config.IMAGES_DIR
+    return create_directory_structure_custom(image_url, description, config.IMAGES_DIR)
 
 def is_duplicate_image(image_url: str, downloaded_urls: Set[str]) -> bool:
     """Check if image URL has already been downloaded"""
     return image_url in downloaded_urls
 
-async def download_image(session: aiohttp.ClientSession, image_info: Dict, base_url: str, downloaded_urls: Set[str]) -> Optional[Dict]:
-    """Download an image and return metadata"""
-    try:
-        image_url = image_info.get('src', '')
-        if not image_url:
-            return None
-            
-        # Convert relative URLs to absolute
+async def download_image(session: aiohttp.ClientSession, image_info: Dict, base_url: str, downloaded_urls: Set[str], custom_images_dir: str = None) -> Optional[Dict]:
+    """Download image and return metadata with duplicate checking"""
+    image_url = image_info.get('src', '')
+    
+    if not image_url:
+        print("⚠️  No image URL found")
+        return None
+    
+    # Convert relative URLs to absolute
+    if image_url.startswith('/') or not image_url.startswith('http'):
         if image_url.startswith('//'):
             image_url = 'https:' + image_url
         elif image_url.startswith('/'):
             image_url = urljoin(base_url, image_url)
-        elif not image_url.startswith(('http://', 'https://')):
+        else:
             image_url = urljoin(base_url, image_url)
-        
-        # Check for duplicates
-        if is_duplicate_image(image_url, downloaded_urls):
-            print(f"Skipping duplicate image: {image_url}")
-            return None
-            
-        # Check if image URL is from allowed domain
-        if not is_allowed_domain(image_url):
-            print(f"Skipping external image: {image_url}")
-            return None
-            
-        # Check if it's actually an image
-        if not is_image_url(image_url):
-            print(f"Skipping non-image URL: {image_url}")
-            return None
-            
+    
+    # Check for duplicates
+    if is_duplicate_image(image_url, downloaded_urls):
+        print(f"Skipping duplicate image: {image_url}")
+        return None
+    
+    try:
         print(f"Downloading: {image_url}")
         
-        async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=config.TIMEOUT)) as response:
+        async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
             if response.status == 200:
                 content = await response.read()
                 
-                # Check file size
-                if len(content) > config.MAX_IMAGE_SIZE:
-                    print(f"Image too large ({len(content)} bytes): {image_url}")
-                    return None
+                # DIAGNOSTIC: Log image info details
+                print(f"🔬 CATEGORY DIAGNOSTIC for {image_url}:")
+                print(f"   - Source page: {image_info.get('source_page', 'UNKNOWN')}")
+                print(f"   - Original description: {repr(image_info.get('desc', ''))}")
+                print(f"   - Image alt: {repr(image_info.get('alt', ''))}")
                 
-                # Get description for folder structure
-                description = image_info.get('desc', '')
-                
-                # Create directory structure based on description
-                save_dir = create_directory_structure(image_url, description)
-                
-                # Generate filename
-                filename = os.path.basename(urlparse(image_url).path)
-                if not filename or '.' not in filename:
-                    filename = f"image_{hash(image_url) % 10000}.jpg"
-                filename = sanitize_filename(filename)
-                
-                file_path = os.path.join(save_dir, filename)
-                
-                # Handle filename conflicts within the same folder
-                counter = 1
-                original_filename = filename
-                while os.path.exists(file_path):
-                    name, ext = os.path.splitext(original_filename)
-                    filename = f"{name}_{counter}{ext}"
-                    file_path = os.path.join(save_dir, filename)
-                    counter += 1
-                
-                # Save image
-                async with aiofiles.open(file_path, 'wb') as f:
-                    await f.write(content)
-                
-                # Add to downloaded URLs set
-                downloaded_urls.add(image_url)
-                
-                # Clean description for metadata
+                # Clean description for folder creation
+                description = image_info.get('desc', '') or image_info.get('alt', '') or 'No description'
                 cleaned_description = clean_description_for_folder(description)
                 
+                # DIAGNOSTIC: Check if we can extract category from source page URL
+                source_page = image_info.get('source_page', '')
+                category_from_url = None
+                if 'ng=' in source_page:
+                    try:
+                        parsed = urllib.parse.urlparse(source_page)
+                        query_params = urllib.parse.parse_qs(parsed.query)
+                        ng_value = query_params.get('ng', [''])[0]
+                        if ng_value:
+                            category_from_url = urllib.parse.unquote_plus(ng_value).strip()
+                    except Exception as e:
+                        print(f"   - Error extracting category from URL: {e}")
+                
+                print(f"   - Category from URL: {repr(category_from_url)}")
+                print(f"   - Cleaned description: {repr(cleaned_description)}")
+                
+                # Use category from URL if available, otherwise use cleaned description
+                final_category = category_from_url if category_from_url else cleaned_description
+                print(f"   - Final category: {repr(final_category)}")
+                
+                # Create directory structure
+                if custom_images_dir:
+                    images_dir = create_directory_structure_custom(image_url, final_category, custom_images_dir)
+                else:
+                    images_dir = create_directory_structure(image_url, final_category)
+                
+                # Extract filename
+                filename = os.path.basename(urllib.parse.urlparse(image_url).path)
+                if not filename:
+                    filename = f"image_{int(time.time())}.jpg"
+                
+                # Handle filename conflicts
+                base_name, ext = os.path.splitext(filename)
+                counter = 1
+                final_path = os.path.join(images_dir, filename)
+                
+                while os.path.exists(final_path):
+                    new_filename = f"{base_name}_{counter}{ext}"
+                    final_path = os.path.join(images_dir, new_filename)
+                    counter += 1
+                    filename = new_filename
+                
+                # Save image
+                async with aiofiles.open(final_path, 'wb') as f:
+                    await f.write(content)
+                
+                # Mark as downloaded
+                downloaded_urls.add(image_url)
+                
                 # Return metadata
-                return {
-                    'original_url': image_url,
-                    'local_path': file_path,
+                metadata = {
                     'filename': filename,
-                    'size_bytes': len(content),
+                    'original_url': image_url,
+                    'local_path': final_path,
+                    'file_size': len(content),
+                    'downloaded_at': time.time(),
+                    'source_page': image_info.get('source_page', ''),
+                    'page_title': image_info.get('page_title', ''),
                     'alt_text': image_info.get('alt', ''),
-                    'title': image_info.get('title', ''),
                     'description': description,
                     'cleaned_description': cleaned_description,
-                    'category': cleaned_description,
-                    'score': image_info.get('score', 0),
-                    'width': image_info.get('width'),
-                    'height': image_info.get('height'),
+                    'category': final_category,  # This is the key field for organization
+                    'crawl_run': image_info.get('crawl_run', ''),
+                    'score': image_info.get('score', 0)
                 }
+                
+                print(f"✅ Downloaded: {filename} → {final_category}")
+                return metadata
             else:
-                print(f"Failed to download {image_url}: HTTP {response.status}")
+                print(f"❌ Failed to download {image_url}: HTTP {response.status}")
                 return None
                 
     except Exception as e:
-        print(f"Error downloading image {image_url}: {e}")
+        print(f"❌ Error downloading {image_url}: {e}")
         return None
 
 async def save_metadata(metadata: List[Dict], filename: str = config.METADATA_FILE):
@@ -241,3 +231,23 @@ async def load_metadata(filename: str = config.METADATA_FILE) -> List[Dict]:
 def get_downloaded_urls_from_metadata(metadata: List[Dict]) -> Set[str]:
     """Extract downloaded URLs from existing metadata to avoid duplicates"""
     return {item['original_url'] for item in metadata if 'original_url' in item} 
+
+def create_directory_structure_custom(image_url: str, description: str = "", base_images_dir: str = None) -> str:
+    """Create directory structure based on description content with custom base directory"""
+    try:
+        # Use description to create category-based subfolder
+        category_folder = clean_description_for_folder(description)
+        
+        # Use custom base directory if provided
+        images_dir = base_images_dir if base_images_dir else config.IMAGES_DIR
+        
+        # Create the directory path
+        subdir = os.path.join(images_dir, category_folder)
+        Path(subdir).mkdir(parents=True, exist_ok=True)
+        
+        return subdir
+    except Exception:
+        # Fallback to main images directory
+        images_dir = base_images_dir if base_images_dir else config.IMAGES_DIR
+        Path(images_dir).mkdir(parents=True, exist_ok=True)
+        return images_dir 
