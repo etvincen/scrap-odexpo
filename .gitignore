@@ -13,3 +13,6 @@ pyproject.toml
 
 # Virtual environments
 .venv
+
+# Assets
+assets/
