@@ -1,5 +1,5 @@
 def main():
-    print("Hello from scrap-odexpo!")
+    print("Hello Woooorld")
 
 
 if __name__ == "__main__":
