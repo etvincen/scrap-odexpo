@@ -8,7 +8,7 @@ BASE_URL = f"https://{ALLOWED_DOMAIN}"
 
 # Crawler settings
 MAX_CONCURRENT_REQUESTS = 3  # Basic throttling
-REQUEST_DELAY = 1.0  # Delay between requests in seconds
+REQUEST_DELAY = 0.5  # Delay between requests in seconds
 TIMEOUT = 30  # Request timeout in seconds
 
 # File paths

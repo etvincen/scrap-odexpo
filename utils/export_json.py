@@ -8,7 +8,7 @@ def export_json_to_csv(json_file_path: str, csv_file_path: str):
     df.to_json(csv_file_path, orient='records', indent=4)
 
 
-csv_path = "wappalyzer_fabienne-vincent-odexpo.com.csv"
-json_path = "wappalyzer_fabienne-vincent-odexpo.com.json"
+csv_path = "docs/wappalyzer_fabienne-vincent-odexpo.com.csv"
+json_path = "docs/wappalyzer_fabienne-vincent-odexpo.com.json"
 
 export_json_to_csv(csv_path, json_path)
