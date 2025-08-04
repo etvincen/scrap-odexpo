@@ -1,25 +1,25 @@
 """
 Advanced Odexpo Gallery Scraper
-Enhanced version with BFS strategy, timestamped runs, and gallery category extraction
+Enhanced version with Playwright for direct DOM control
 """
 
 import asyncio
 import config
-from advanced_crawler import AdvancedOdexpoGalleryCrawler
+from advanced_crawler import PlaywrightOdexpoGalleryCrawler
 
 async def main():
     print("🎨 Advanced Odexpo Gallery Scraper")
     print("=" * 60)
     print(f"Target website: {config.BASE_URL}")
     print(f"Allowed domain: {config.ALLOWED_DOMAIN}")
-    print("Features: Direct Gallery Navigation | ng Parameter Extraction | BFS Crawling")
+    print("Features: Direct Playwright | DOM Control | BFS Crawling")
     print("=" * 60)
     print(f"Max categories to process: 3")
     print(f"Pages per category: UNLIMITED (until exhausted)")
-    print("Strategy: Direct gallery navigation → Extract categories from ng parameter")
+    print("Strategy: Direct Playwright → DOM extraction → Category separation")
     print()
     
-    async with AdvancedOdexpoGalleryCrawler(use_timestamped_run=True) as crawler:
+    async with PlaywrightOdexpoGalleryCrawler(use_timestamped_run=True) as crawler:
         print(f"📁 Crawl run directory: {crawler.run_dir}")
         
         # Start crawling from homepage - let it discover the gallery intelligently
@@ -64,9 +64,8 @@ async def main():
         print("✅ Advanced crawl completed successfully!")
         print("🔍 BFS strategy ensured complete category coverage")
         print("📅 Timestamped run preserves crawl history")
-        print("🎯 Direct gallery navigation with ng parameter extraction")
+        print("🎯 Direct Playwright DOM extraction (no image filtering!)")
         print()
 
 if __name__ == "__main__":
-    # Run the async main function
     asyncio.run(main()) 
