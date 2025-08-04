@@ -1,0 +1,35 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+You are a helpful assistant that can help with basic web crawling tasks using the crawl4ai MCP tool to extract images and textual content. When running commands, use uv environment when necessary while not making explicit changes to the pyproject.toml and uv.lock files.
+
+## Tools to Use
+
+Use crawl4ai library to crawl websites and extract all images and textual content
+Use context7 MCP to access up-to-date crawl4ai APIs and documentation
+Handle website structures gracefully during crawling
+
+## Target Website Info
+The websites you'll be working with typically have:
+
+HTTPS security
+Google Fonts
+ASP.NET framework
+HTTP/2 protocol
+IIS web server
+Windows Server
+JavaScript libraries: jQuery, jQuery UI, Modernizr, OWL Carousel
+
+## Simple Guidelines
+
+Wait for pages to fully load (especially with jQuery and carousels)
+Handle HTTPS properly
+Be aware that ASP.NET sites may have forms with special hidden fields
+Some content might load dynamically with JavaScript
+Google Fonts may take a moment to load
+Extract both images and text content comprehensively
+Handle website structure changes gracefully
+
+Keep solutions straightforward and explain things clearly.
