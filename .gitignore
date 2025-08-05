@@ -14,5 +14,9 @@ pyproject.toml
 # Virtual environments
 .venv
 
+# Tests output files
+test_*/
+test_*.py
+
 # Assets
 assets/

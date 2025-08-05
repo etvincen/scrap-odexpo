@@ -1,6 +1,6 @@
 # Odexpo Gallery Scraper
 
-A comprehensive web scraper for extracting images and metadata from the Fabienne Vincent gallery website (fabienne-vincent.odexpo.com) with advanced BFS crawling and category-aware features.
+A comprehensive web scraper for extracting images and metadata from the Fabienne Vincent gallery website (fabienne-vincent.odexpo.com) with advanced BFS crawling, file organization, and renaming capabilities.
 
 ## Features
 
@@ -11,6 +11,13 @@ A comprehensive web scraper for extracting images and metadata from the Fabienne
 - ✅ **Category-Aware Pagination** - Follows pagination links within the same gallery category
 - ✅ **Thorough Page Processing** - Ensures all images are downloaded before moving to next page
 - ✅ **Smart Duplicate Detection** - Prevents re-downloading across multiple runs
+
+### 🏷️ File Management & Organization
+- ✅ **Smart File Renaming** - Renames files using artwork titles + last 3 digits for uniqueness
+- ✅ **Category Cleaning** - Automatically cleans categories (lowercase, no accents, no underscores)  
+- ✅ **Automatic Reorganization** - Sorts existing images into category-based folders
+- ✅ **Metadata Synchronization** - Keeps JSON metadata in sync with file changes
+- ✅ **Collection Statistics** - View comprehensive statistics about your image collection
 
 ### 📝 Basic Crawler
 - ✅ Domain-restricted crawling (only fabienne-vincent.odexpo.com)
@@ -32,14 +39,69 @@ The crawler is configured in `config.py`:
 
 ## Usage
 
-### Advanced Crawler (Recommended)
+### ⚡ Quick Start
+
+The simplest way to get started:
+
+```bash
+# Make launcher executable (one time only)
+chmod +x gallery_tool.py
+
+# Launch the gallery tool
+./gallery_tool.py
+```
+
+This automatically detects whether you have `uv` installed and launches the unified interface with all features.
+
+### 🎯 Unified Interface (Recommended)
+
+The unified interface provides all functionality in one convenient menu:
 
 ```bash
 # Install dependencies (if using uv)
 uv sync
 
+# Run the unified interface
+uv run python main_unified.py
+```
+
+**Available Operations:**
+1. **🕷️ Advanced Crawling** - Download new images from gallery
+2. **📁 Reorganize Images** - Sort existing images by categories  
+3. **🏷️ Rename Files** - Update filenames using titles + clean categories
+4. **📊 Show Statistics** - Display collection overview
+5. **❌ Exit**
+
+### Individual Scripts
+
+You can also run individual components:
+
+#### Advanced Crawler
+
+```bash
 # Run the advanced scraper with BFS and timestamped runs
-python main_advanced.py
+uv run python main_advanced.py
+```
+
+#### File Renaming
+
+```bash
+# Rename files using artwork titles + last 3 digits
+uv run python rename_files.py
+```
+
+#### Image Reorganization
+
+```bash
+# Reorganize existing images by categories
+uv run python reorganize.py
+```
+
+#### Basic Crawler
+
+```bash
+# Run the basic scraper
+uv run python main.py
 ```
 
 **What the Advanced Crawler Does:**
@@ -64,6 +126,37 @@ python main.py
 python reorganize.py
 ```
 
+## File Renaming Feature
+
+The file renaming tool transforms your collection with meaningful filenames:
+
+### Before Renaming:
+```
+739467410189419.jpg          (cryptic number)
+57903569135428.jpg           (cryptic number)
+```
+
+### After Renaming:
+```
+tigre_du_bengale_419.jpg     (title + last 3 digits)
+sentinelle_de_la_savane_428.jpg (title + last 3 digits)
+```
+
+### Category Cleaning:
+```
+FAUVES → fauves
+ANIMAUX  D_AFRIQUE → animaux-d-afrique
+```
+
+**Features:**
+- 🏷️ Uses artwork titles from metadata for meaningful names
+- 🔢 Keeps last 3 digits from original filename for uniqueness
+- 🧹 Cleans categories (lowercase, removes accents and underscores)
+- 📁 Moves files to cleaned category folders
+- 💾 Updates all metadata files automatically
+- 🔍 Dry run mode to preview changes before applying
+- ⚠️ Handles filename conflicts automatically
+
 ## Advanced Crawler Output Structure
 
 ```
@@ -71,25 +164,32 @@ assets/
 ├── crawl_runs/
 │   ├── 20241208_143022/          # Timestamped run folder
 │   │   ├── images/               # Images organized by category
-│   │   │   ├── fauves/          # Gallery category
-│   │   │   ├── animaux_dafrique/
-│   │   │   ├── portraits/
+│   │   │   ├── fauves/          # Cleaned gallery category
+│   │   │   │   ├── tigre_du_bengale_419.jpg
+│   │   │   │   ├── guepard_en_marche_699.jpg
+│   │   │   │   └── ...
+│   │   │   ├── animaux-d-afrique/
+│   │   │   │   ├── sentinelle_de_la_savane_428.jpg
+│   │   │   │   ├── zebre_des_plaines_020.jpg
+│   │   │   │   └── ...
 │   │   │   └── ...
-│   │   └── metadata.json        # Complete metadata
+│   │   └── metadata.json        # Complete metadata with cleaned info
 │   └── 20241208_151530/          # Another run
 └── images/                       # Legacy basic crawler images
 ```
 
-## Crawler Comparison
+## Tool Comparison
 
-| Feature | Basic Crawler | Advanced Crawler |
-|---------|---------------|------------------|
-| Category Discovery | ❌ Manual | ✅ Automatic (select tags) |
-| Crawling Strategy | Random | ✅ BFS (category-aware) |
-| Pagination | Basic link following | ✅ Smart category pagination |
-| Run Management | Single folder | ✅ Timestamped runs |
-| Page Processing | May miss images | ✅ Thorough completion |
-| Gallery Coverage | Partial | ✅ Complete per category |
+| Feature | Basic Crawler | Advanced Crawler | Unified Interface |
+|---------|---------------|------------------|-------------------|
+| Category Discovery | ❌ Manual | ✅ Automatic (select tags) | ✅ Automatic |
+| Crawling Strategy | Random | ✅ BFS (category-aware) | ✅ BFS |
+| Pagination | Basic link following | ✅ Smart category pagination | ✅ Smart pagination |
+| Run Management | Single folder | ✅ Timestamped runs | ✅ Timestamped runs |
+| File Renaming | ❌ None | ❌ None | ✅ Title-based |
+| Category Cleaning | ❌ None | ❌ None | ✅ Automatic |
+| Collection Management | ❌ None | ❌ None | ✅ Full suite |
+| Interactive Interface | ❌ None | ❌ None | ✅ Menu-driven |
 
 ## Gallery Crawling Strategy
 

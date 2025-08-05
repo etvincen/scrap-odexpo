@@ -7,6 +7,8 @@ import asyncio
 import json
 import time
 import re
+import html
+import aiofiles
 from collections import defaultdict, deque
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +26,39 @@ from utils.helpers import (
     load_metadata,
     get_downloaded_urls_from_metadata
 )
+
+def clean_text_field(text: str) -> str:
+    """Clean text field by normalizing whitespace and decoding HTML entities"""
+    if not text:
+        return ""
+    
+    # Decode HTML entities (like &nbsp;, &amp;, etc.)
+    text = html.unescape(text)
+    
+    # Remove any remaining HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Normalize whitespace: replace multiple spaces/tabs/newlines with single space
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Trim leading and trailing whitespace
+    text = text.strip()
+    
+    return text
+
+def fix_dimensions_spacing(text: str) -> str:
+    """Fix spacing issues in dimensions like 'x5 0' -> 'x50'"""
+    if not text:
+        return ""
+    
+    # Handle cases like "40 x5 0 cm" -> "40 x50 cm"
+    # Look for pattern like "x followed by digit space digit"
+    text = re.sub(r'x(\d+)\s+(\d+)', r'x\1\2', text)
+    
+    # Also handle "x 5 0" -> "x50"
+    text = re.sub(r'x\s+(\d+)\s+(\d+)', r'x\1\2', text)
+    
+    return text
 
 class PlaywrightOdexpoGalleryCrawler:
     """
@@ -185,6 +220,69 @@ class PlaywrightOdexpoGalleryCrawler:
         finally:
             await page.close()
 
+    async def _download_image_from_lightbox(self, image_url: str, title: str, painting_type: str, 
+                                          dimensions: str, alt: str, source_page: str, page_title: str) -> Optional[Dict]:
+        """Download image directly using the URL from lightbox, avoiding duplicate HTTP requests"""
+        try:
+            print(f"🔽 Downloading directly: {image_url}")
+            
+            async with self.session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    
+                    # Extract category from source page URL
+                    category_from_url = self._extract_category_from_url(source_page)
+                    final_category = category_from_url if category_from_url else 'miscellaneous'
+                    
+                    # Create directory structure
+                    from utils.helpers import create_directory_structure_custom
+                    images_dir = create_directory_structure_custom(image_url, final_category, self.images_dir)
+                    
+                    # Extract filename
+                    import os
+                    filename = os.path.basename(urlparse(image_url).path)
+                    if not filename:
+                        filename = f"image_{int(time.time())}.jpg"
+                    
+                    # Handle filename conflicts
+                    base_name, ext = os.path.splitext(filename)
+                    counter = 1
+                    final_path = os.path.join(images_dir, filename)
+                    
+                    while os.path.exists(final_path):
+                        new_filename = f"{base_name}_{counter}{ext}"
+                        final_path = os.path.join(images_dir, new_filename)
+                        counter += 1
+                        filename = new_filename
+                    
+                    # Save image
+                    async with aiofiles.open(final_path, 'wb') as f:
+                        await f.write(content)
+                    
+                    # Return metadata
+                    return {
+                        'filename': filename,
+                        'original_url': image_url,
+                        'local_path': final_path,
+                        'file_size': len(content),
+                        'downloaded_at': time.time(),
+                        'source_page': source_page,
+                        'page_title': clean_text_field(page_title),
+                        'alt_text': clean_text_field(alt),
+                        'title': clean_text_field(title),
+                        'painting_type': clean_text_field(painting_type),
+                        'dimensions': clean_text_field(dimensions),
+                        'category': final_category,
+                        'crawl_run': self.run_dir
+                    }
+                else:
+                    print(f"❌ Failed to download {image_url}: HTTP {response.status}")
+                    return None
+                    
+        except Exception as e:
+            print(f"❌ Error downloading {image_url}: {e}")
+            return None
+
     def _extract_category_from_url(self, url: str) -> Optional[str]:
         """Extract category name from URL parameters"""
         parsed = urlparse(url)
@@ -234,9 +332,9 @@ class PlaywrightOdexpoGalleryCrawler:
             await page.wait_for_timeout(2000)
             
             # Get page info
-            title = await page.title()
+            page_title = await page.title()
             print(f"✅ Successfully crawled: {url}")
-            print(f"Page title: {title}")
+            print(f"Page title: {page_title}")
             
             # DIAGNOSTIC: Analyze page content
             content = await page.content()
@@ -244,7 +342,7 @@ class PlaywrightOdexpoGalleryCrawler:
             print(f"   - HTML length: {len(content)} chars")
             
             # Extract all images using direct DOM queries
-            image_elements = await page.query_selector_all('img')
+            image_elements = await page.query_selector_all('img[src*="images/"]')
             print(f"🔬 DIAGNOSTIC: Found {len(image_elements)} total img elements")
             
             # Filter for gallery images (images in the gallery ID folders)
@@ -263,20 +361,110 @@ class PlaywrightOdexpoGalleryCrawler:
                     
                     # Check if it's a gallery image (has gallery ID pattern)
                     if re.search(r'images/\d+/', abs_src):
-                        gallery_images.append({
-                            'src': abs_src,
-                            'alt': alt,
-                            'score': 4,  # Give all gallery images high score
-                            'desc': alt,
-                            'source_page': url,
-                            'page_title': title,
-                            'found_at': time.time(),
-                            'crawl_run': self.run_dir
-                        })
+                        # Click image to get high-res version
+                        print(f"🖱️  Getting high-res version for: {abs_src}")
+                        try:
+                            await img_element.click()
+                            await page.wait_for_selector('.mfp-img', timeout=5000)
+                            
+                            # Get high-res image URL
+                            fullres_img = await page.query_selector('.mfp-img')
+                            if fullres_img:
+                                fullres_src = await fullres_img.get_attribute('src')
+                                
+                                # Get additional metadata from mfp-title
+                                img_title = ""
+                                painting_type = ""
+                                dimensions = ""
+                                
+                                mfp_title = await page.query_selector('.mfp-title')
+                                if mfp_title:
+                                    # Get title from b tag
+                                    title_elem = await mfp_title.query_selector('b')
+                                    if title_elem:
+                                        raw_title = await title_elem.inner_text()
+                                        img_title = clean_text_field(raw_title)
+                                    
+                                    # Get painting type and dimensions from text after br tag
+                                    html_content = await mfp_title.inner_html()
+                                    # Split content after <br> tag
+                                    parts = html_content.split('<br>')
+                                    if len(parts) > 1:
+                                        raw_info = parts[1].strip()
+                                        # Clean the text first
+                                        info = clean_text_field(raw_info)
+                                        # Fix spacing issues in dimensions
+                                        info = fix_dimensions_spacing(info)
+                                        
+                                        # Improved regex for dimensions that handles spacing issues
+                                        # Matches patterns like "40 x50 cm", "40x50", "40 x 50", etc.
+                                        dim_match = re.search(r'\b(\d+(?:\.\d+)?\s*x\s*\d+(?:\.\d+)?(?:\s*cm)?)\b', info, re.IGNORECASE)
+                                        if dim_match:
+                                            raw_dimensions = dim_match.group(1)
+                                            # Apply both fixes to the extracted dimensions
+                                            dimensions = clean_text_field(fix_dimensions_spacing(raw_dimensions))
+                                            # Remove dimensions from painting_type
+                                            painting_type = info.replace(raw_dimensions, '').strip()
+                                            painting_type = clean_text_field(painting_type)
+                                        else:
+                                            painting_type = clean_text_field(info)
+                                
+                                if fullres_src:
+                                    # Convert to absolute URL if needed
+                                    if fullres_src.startswith('/'):
+                                        fullres_src = urljoin(url, fullres_src)
+                                    elif not fullres_src.startswith('http'):
+                                        fullres_src = urljoin(url, '/' + fullres_src)
+                                        
+                                    print(f"   ✨ Found high-res: {fullres_src}")
+                                    print(f"      Title: {img_title}")
+                                    print(f"      Type: {painting_type}")
+                                    print(f"      Dimensions: {dimensions}")
+                                    
+                                    # Check for duplicates before downloading
+                                    if fullres_src not in self.downloaded_urls:
+                                        # Download image directly while lightbox is open
+                                        downloaded_metadata = await self._download_image_from_lightbox(
+                                            fullres_src, img_title, painting_type, dimensions, alt, url, page_title
+                                        )
+                                        
+                                        if downloaded_metadata:
+                                            gallery_images.append(downloaded_metadata)
+                                            self.downloaded_images.append(downloaded_metadata)
+                                            self.downloaded_urls.add(fullres_src)
+                                            
+                                            # Track categories found
+                                            category = downloaded_metadata.get('category', 'miscellaneous')
+                                            self.categories_found.add(category)
+                                            print(f"   ✅ Downloaded directly: {downloaded_metadata['filename']}")
+                                        else:
+                                            print(f"   ❌ Failed to download: {fullres_src}")
+                                    else:
+                                        print(f"   ⏭️  Skipping duplicate: {fullres_src}")
+                            
+                            # Close lightbox
+                            close_btn = await page.query_selector('.mfp-close')
+                            if close_btn:
+                                await close_btn.click()
+                                await asyncio.sleep(0.2)  # Reduced pause between images
+                                
+                        except Exception as e:
+                            print(f"   ⚠️  Error getting high-res version: {e}")
+                            # Fallback to preview version if high-res fails
+                            gallery_images.append({
+                                'src': abs_src,
+                                'alt': clean_text_field(alt),
+                                'title': '',  # No title available in fallback
+                                'painting_type': '',  # No painting type available in fallback
+                                'dimensions': '',  # No dimensions available in fallback
+                                'desc': clean_text_field(alt),
+                                'source_page': url,
+                                'page_title': clean_text_field(page_title),
+                                'found_at': time.time(),
+                                'crawl_run': self.run_dir
+                            })
             
             print(f"🔬 DIAGNOSTIC: Found {len(gallery_images)} gallery images (filtered)")
-            
-            # DIAGNOSTIC: Check for potential image extraction issues
             if len(gallery_images) < 10:
                 print(f"🔬 SUSPICIOUS: Only {len(gallery_images)} gallery images found")
                 
@@ -292,25 +480,9 @@ class PlaywrightOdexpoGalleryCrawler:
             
             print(f"Found {len(gallery_images)} images on this page")
             
-            # Process each image
-            for i, img_info in enumerate(gallery_images):
-                print(f"Processing image {i+1}/{len(gallery_images)}")
-                
-                # Download image (with duplicate checking)
-                downloaded_metadata = await download_image(
-                    self.session, img_info, url, self.downloaded_urls, self.images_dir
-                )
-                
-                if downloaded_metadata:
-                    self.downloaded_images.append(downloaded_metadata)
-                    new_images_count += 1
-                    
-                    # Track categories found
-                    category = downloaded_metadata.get('category', 'miscellaneous')
-                    self.categories_found.add(category)
-                
-                # Throttling between images
-                await asyncio.sleep(config.REQUEST_DELAY)
+            # Images are now downloaded directly in the lightbox loop above
+            # No need for separate processing loop
+            new_images_count = len(gallery_images)
             
             print(f"📥 Downloaded {new_images_count} new images from this page")
             print(f"🔬 DIAGNOSTIC: Expected vs Actual - Got: {new_images_count} images")
@@ -398,7 +570,7 @@ class PlaywrightOdexpoGalleryCrawler:
         
         print(f"✅ Completed category '{category_name}' - visited {pages_in_category} pages total")
 
-    async def crawl_website_advanced(self, start_url: str = None, max_categories: int = 3) -> List[Dict]:
+    async def crawl_website_advanced(self, start_url: str = None, max_categories: Optional[int] = 3) -> List[Dict]:
         """
         Simplified advanced website crawling using direct Playwright navigation
         """
@@ -407,7 +579,7 @@ class PlaywrightOdexpoGalleryCrawler:
             
         print(f"🚀 Starting advanced website crawl from: {start_url}")
         print(f"Allowed domain: {config.ALLOWED_DOMAIN}")
-        print(f"Max categories: {max_categories}")
+        print(f"Max categories: {max_categories if max_categories != 'all' else 'all'}")
         print(f"Strategy: Direct Playwright + DOM extraction")
         
         initial_image_count = len(self.downloaded_images)
@@ -426,8 +598,12 @@ class PlaywrightOdexpoGalleryCrawler:
             internal_links, _ = await self.crawl_page_thoroughly(gallery_url)
             return self.downloaded_images
         
-        # Step 3: Limit to requested number of categories
-        categories_to_process = self.gallery_categories[:max_categories]
+        # Step 3: Limit to requested number of categories or use all if None
+        if max_categories == "all":
+            categories_to_process = self.gallery_categories
+        else:
+            categories_to_process = self.gallery_categories[:max_categories]
+            
         print(f"📋 Selected {len(categories_to_process)} categories to process:")
         for i, cat in enumerate(categories_to_process):
             print(f"   {i+1}. {cat['name']} (ID: {cat['value']})")

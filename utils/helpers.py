@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 from pathlib import Path
 import json
 import re
+import html
 from typing import Dict, List, Optional, Set
 import config
 import urllib.parse
@@ -45,12 +46,8 @@ def clean_description_for_folder(description: str) -> str:
     if not description:
         return "miscellaneous"
     
-    # Remove HTML tags if any
-    import re
-    cleaned = re.sub(r'<[^>]+>', '', description)
-    
-    # Remove extra whitespace, tabs, newlines
-    cleaned = re.sub(r'\s+', ' ', cleaned.strip())
+    # First apply general text cleanup
+    cleaned = clean_text_field(description)
     
     # SIMPLIFIED: Just take the first meaningful word/phrase
     # Split by common separators and take first part
@@ -188,13 +185,13 @@ async def download_image(session: aiohttp.ClientSession, image_info: Dict, base_
                     'file_size': len(content),
                     'downloaded_at': time.time(),
                     'source_page': image_info.get('source_page', ''),
-                    'page_title': image_info.get('page_title', ''),
-                    'alt_text': image_info.get('alt', ''),
-                    'description': description,
-                    'cleaned_description': cleaned_description,
+                    'page_title': clean_text_field(image_info.get('page_title', '')),
+                    'alt_text': clean_text_field(image_info.get('alt', '')),
+                    'title': clean_text_field(image_info.get('title', '')),
+                    'painting_type': clean_text_field(image_info.get('painting_type', '')),
+                    'dimensions': clean_text_field(fix_dimensions_spacing(image_info.get('dimensions', ''))),
                     'category': final_category,  # This is the key field for organization
-                    'crawl_run': image_info.get('crawl_run', ''),
-                    'score': image_info.get('score', 0)
+                    'crawl_run': image_info.get('crawl_run', '')
                 }
                 
                 print(f"✅ Downloaded: {filename} → {final_category}")
@@ -251,3 +248,36 @@ def create_directory_structure_custom(image_url: str, description: str = "", bas
         images_dir = base_images_dir if base_images_dir else config.IMAGES_DIR
         Path(images_dir).mkdir(parents=True, exist_ok=True)
         return images_dir 
+
+def clean_text_field(text: str) -> str:
+    """Clean text field by normalizing whitespace and decoding HTML entities"""
+    if not text:
+        return ""
+    
+    # Decode HTML entities (like &nbsp;, &amp;, etc.)
+    text = html.unescape(text)
+    
+    # Remove any remaining HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    
+    # Normalize whitespace: replace multiple spaces/tabs/newlines with single space
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Trim leading and trailing whitespace
+    text = text.strip()
+    
+    return text
+
+def fix_dimensions_spacing(text: str) -> str:
+    """Fix spacing issues in dimensions like 'x5 0' -> 'x50'"""
+    if not text:
+        return ""
+    
+    # Handle cases like "40 x5 0 cm" -> "40 x50 cm"
+    # Look for pattern like "x followed by digit space digit"
+    text = re.sub(r'x(\d+)\s+(\d+)', r'x\1\2', text)
+    
+    # Also handle "x 5 0" -> "x50"
+    text = re.sub(r'x\s+(\d+)\s+(\d+)', r'x\1\2', text)
+    
+    return text 
