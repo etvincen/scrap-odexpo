@@ -8,7 +8,7 @@ import asyncio
 import sys
 import os
 import config
-from advanced_crawler import PlaywrightOdexpoGalleryCrawler
+from crawler import PlaywrightOdexpoGalleryCrawler
 from rename_files import find_all_metadata_files, rename_files_in_metadata
 
 async def auto_rename_after_crawl(crawl_run_dir: str):
@@ -121,7 +121,7 @@ async def main():
 
 if __name__ == "__main__":
     # Check if we're in the right directory
-    if not os.path.exists("advanced_crawler.py"):
+    if not os.path.exists("crawler.py"):
         print("❌ Error: This script must be run from the project root directory")
         print("   Please navigate to the scrap-odexpo directory and try again")
         sys.exit(1)

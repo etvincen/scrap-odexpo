@@ -6,8 +6,7 @@ Comprehensive script with multiple operations: crawling, organizing, and renamin
 import asyncio
 import sys
 import config
-from advanced_crawler import PlaywrightOdexpoGalleryCrawler
-from reorganize import reorganize_images
+from crawler import PlaywrightOdexpoGalleryCrawler
 from rename_files import find_all_metadata_files, rename_files_in_metadata
 
 async def show_menu():
@@ -75,18 +74,6 @@ async def crawl_gallery():
             for category, count in summary['category_breakdown'].items():
                 print(f"  {category}: {count} images")
 
-async def reorganize_existing():
-    """Reorganize existing images"""
-    print("\n📁 Reorganizing Existing Images")
-    print("=" * 50)
-    print("This will sort existing images into category-based folders")
-    print()
-    
-    confirm = input("Continue with reorganization? (y/N): ").strip().lower()
-    if confirm == 'y':
-        await reorganize_images()
-    else:
-        print("❌ Reorganization cancelled")
 
 async def rename_files_interactive():
     """Interactive file renaming with title + last 3 digits"""
@@ -210,16 +197,12 @@ async def main():
             if choice == '1':
                 await crawl_gallery()
             elif choice == '2':
-                await reorganize_existing()
-            elif choice == '3':
-                await rename_files_interactive()
-            elif choice == '4':
                 await show_statistics()
-            elif choice == '5':
+            elif choice == '3':
                 print("\n👋 Goodbye!")
                 sys.exit(0)
             else:
-                print("\n❌ Invalid choice. Please enter 1-5.")
+                print("\n❌ Invalid choice. Please enter 1-3.")
                 
         except KeyboardInterrupt:
             print("\n\n👋 Goodbye!")
