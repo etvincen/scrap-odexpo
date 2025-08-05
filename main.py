@@ -16,8 +16,6 @@ async def show_menu():
     print("Choose an operation:")
     print()
     print("1. 🕷️  Advanced Crawling - Download new images from gallery")
-    print("2. 📁 Reorganize Images - Sort existing images by categories") 
-    print("3. 🏷️  Rename Files - Update filenames using titles + clean categories")
     print("4. 📊 Show Statistics - Display collection overview")
     print("5. ❌ Exit")
     print()

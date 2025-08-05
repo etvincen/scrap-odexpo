@@ -13,9 +13,7 @@ A web scraper for downloading high-resolution artwork images from the Fabienne V
 
 ## Quick Start
 
-### Option 1: Complete Workflow (Recommended)
-
-Run everything automatically - crawl, download, rename, and organize:
+Run the complete workflow automatically - crawl, download, rename, and organize:
 
 ```bash
 python gallery_tool.py
@@ -27,23 +25,9 @@ This will:
 3. Organize into cleaned category folders
 4. Save metadata for all images
 
-### Option 2: Interactive Menu
-
-For more control over individual operations:
-
-```bash
-python main.py
-```
-
-Choose from:
-1. 🕷️ Advanced Crawling - Download new images
-2. 📁 Reorganize Images - Sort existing images  
-3. 🏷️ Rename Files - Update filenames with titles
-4. 📊 Show Statistics - View collection overview
-
 ## Requirements
 
-- Python 3.7+
+- Python 3.11+
 - Install dependencies: `pip install -r requirements.txt`
 
 ## How It Works
