@@ -226,7 +226,7 @@ class PlaywrightOdexpoGalleryCrawler:
         try:
             print(f"🔽 Downloading directly: {image_url}")
             
-            async with self.session.get(image_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with self.session.get(image_url, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if response.status == 200:
                     content = await response.read()
                     
